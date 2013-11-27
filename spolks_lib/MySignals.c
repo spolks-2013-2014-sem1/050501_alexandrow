@@ -6,6 +6,7 @@ void SetAllSignals(void)
     SetSignal(SIGINT);
     SetSignal(SIGTERM);
     SetSignal(SIGQUIT);
+
     return;
 }
 

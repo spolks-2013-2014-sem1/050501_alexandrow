@@ -1,7 +1,7 @@
 #include "MySockets.h"
-
-//Common part. Should be in library for all labs
 #define MAX_SOCKETS 512
+
+//Common part. Should be in library folder for all labs
 
 int socketDescriptors[MAX_SOCKETS] = {0};
 int socketCount = 0;
@@ -11,18 +11,16 @@ int CreateSocket(const char *protocolName)
     int socketDescriptor;
     struct protoent *protocol;
 
-
     protocol = getprotobyname(protocolName);
     socketDescriptor = socket(AF_INET, SOCK_STREAM, protocol->p_proto);
-
     if (socketDescriptor == -1)
     {
         puts("Socket creation failed!");
         exit(EXIT_FAILURE);
     }
     socketDescriptors[socketCount] = socketDescriptor;
-    return socketDescriptor;
 
+    return socketDescriptor;
 }
 
 int BindSocket(int socketDescriptor, struct sockaddr* socketAddress)
@@ -33,8 +31,8 @@ int BindSocket(int socketDescriptor, struct sockaddr* socketAddress)
         puts("Binding failed!");
         exit(EXIT_FAILURE);
     }
-    return bindResult;
 
+    return bindResult;
 }
 
 
@@ -65,6 +63,7 @@ int ShutdownSocket(int socket)
         puts("Shutdown socket failed!");
         CloseSocket(socket);
     }
+
     return shutdownResult;
 }
 
@@ -72,16 +71,19 @@ int CloseSocket(int socket)
 {
     close(socket);
     socketCount--;
+
     return 0;
 }
 
 void CloseAllSockets()
 {
     int i;
+
     for (i=socketCount; i>0; i--)
     {
         CloseSocket(socketDescriptors[i-1]);
     }
+
     return;
 }
 

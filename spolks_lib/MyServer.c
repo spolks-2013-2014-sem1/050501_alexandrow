@@ -24,6 +24,7 @@ int StartListen(int socketDescriptor, int backlog)
         close(socketDescriptor);
         exit(EXIT_FAILURE);
     }
+
     return listenResult;
 }
 

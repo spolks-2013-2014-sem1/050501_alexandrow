@@ -39,6 +39,7 @@ void Processing(int clientSocketDescriptor)
 int main()
 {
     int serverSocketDescriptor, clientSocketDescriptor;
+    int shutdownResult;
 
     SetAllSignals();
     serverSocketDescriptor = StartServer("127.0.0.1", 6666, "tcp");
@@ -46,23 +47,21 @@ int main()
     while(1)
     {
         clientSocketDescriptor = AcceptClient(serverSocketDescriptor);
-        if (clientSocketDescriptor == -1) {
+        if (clientSocketDescriptor == -1)
+        {
             continue;
         }
         puts("Client connected.");
 
-
         Processing(clientSocketDescriptor);
 
-
-        int shutdownResult = ShutdownSocket(clientSocketDescriptor);
+        shutdownResult = ShutdownSocket(clientSocketDescriptor);
         if (shutdownResult == -1)
         {
             CloseSocket(serverSocketDescriptor);
             CloseSocket(clientSocketDescriptor);
             exit(EXIT_FAILURE);
         }
-
         CloseSocket(clientSocketDescriptor);
         puts("Client connection has been closed.");
     }
