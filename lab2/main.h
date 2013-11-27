@@ -6,4 +6,13 @@ int StartServer (const char* address, unsigned short port, const char* protocolN
 int BindSocket(int socketDescriptor, struct sockaddr* socketAddress);
 int StartListen(int socketDescriptor, int backlog);
 struct sockaddr_in PrepareSocketAddress(unsigned short port, const char *address);
+int ShutdownSocket(int socket);
+int CloseSocket(int socket);
+void CloseAllSockets();
+
+int AcceptClient(int serverSocket);
+
+void SetAllSignals(void);
+void SetSignal(int signum);
+void SignalHandler(int signum);
 
