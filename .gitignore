@@ -3,3 +3,6 @@ obj/
 *.cbp
 *.depend
 *.layout
+cbp2make
+*~
+
