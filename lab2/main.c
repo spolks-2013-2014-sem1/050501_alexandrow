@@ -24,6 +24,7 @@ void Processing(int clientSocketDescriptor)
         if (bytesRead && bytesRead != -1)
         {
             fwrite(buffer, 1, GetDataLength(buffer, bufferSize), stdout);
+            send(clientSocketDescriptor, buffer, GetDataLength(buffer, bufferSize), 0);
             fflush(stdout);
         }
         else
