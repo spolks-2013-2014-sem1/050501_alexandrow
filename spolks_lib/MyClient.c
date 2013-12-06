@@ -1,14 +1,11 @@
 #include "MyClient.h"
 
-int StartClient (const char* address, unsigned short port, const char* protocolName)
+int StartClient (const char* protocolName)
 {
     int socketDescriptor = CreateSocket("tcp");
     int option = 1;
 
     setsockopt(socketDescriptor, SOL_SOCKET, SO_REUSEADDR, (void*)&option, sizeof(option));
-    //struct sockaddr_in socketAddress = PrepareSocketAddress(port, address);
-    //BindSocket(socketDescriptor, (struct sockaddr*)&socketAddress);
-    //StartListen(socketDescriptor, 1);
     puts("Client started!");
 
     return socketDescriptor;

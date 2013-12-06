@@ -3,17 +3,17 @@
 
 void SetAllSignals(void)
 {
-    SetSignal(SIGINT);
-    SetSignal(SIGTERM);
-    SetSignal(SIGQUIT);
+    SetSignal(SIGINT, &SignalHandler);
+    SetSignal(SIGTERM, &SignalHandler);
+    SetSignal(SIGQUIT, &SignalHandler);
 
     return;
 }
 
-void SetSignal(int signum)
+void SetSignal(int signum, void (*signalHandler)(int))
 {
     struct sigaction new_action;
-    new_action.sa_handler = SignalHandler;
+    new_action.sa_handler = signalHandler;
     sigemptyset (&new_action.sa_mask);
     new_action.sa_flags = 0;
     sigaction(signum, &new_action, 0);

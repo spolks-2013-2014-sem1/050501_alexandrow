@@ -4,44 +4,13 @@ void Prompt(void);
 void Server(void);
 void Client(char *filename);
 void ServerProcessing(int socket);
+void ClientProcess(int clientSocketDescriptor, FILE *rdfile);
+void SendOOBData(int socket);
+void ReceiveOOBData(int socket);
+void OOBSignalHandler(int signum);
+int SetSocketOwner(int socket);
 
-char *basename(char const *path)
-{
-        char *s = strrchr(path, '/');
-        if(s==NULL) {
-                return strdup(path);
-        } else {
-                return strdup(s + 1);
-        }
-}
-
- void reverse(char s[])
- {
-     int i, j;
-     char c;
-
-     for (i = 0, j = strlen(s)-1; i<j; i++, j--) {
-         c = s[i];
-         s[i] = s[j];
-         s[j] = c;
-     }
- }
-
- void itoa(int n, char s[])
- {
-     int i, sign;
-
-     if ((sign = n) < 0)
-         n = -n;
-     i = 0;
-     do {
-         s[i++] = n % 10 + '0';
-     } while ((n /= 10) > 0);
-     if (sign < 0)
-         s[i++] = '-';
-     s[i] = '\0';
-     reverse(s);
- }
+int urgentData = 0;
 
 int main(int argc, char **argv)
 {
@@ -81,10 +50,19 @@ int main(int argc, char **argv)
     return EXIT_SUCCESS;
 }
 
+void Prompt(void)
+{
+    puts("Usage:\t./lab4 server\n\t./lab4 client [filename]");
+    return;
+}
+
 void Server(void)
 {
     int serverSocketDescriptor, clientSocketDescriptor;
     int shutdownResult;
+
+    SetSignal(SIGURG, &OOBSignalHandler);
+
     serverSocketDescriptor = StartServer("127.0.0.1", 6660, "tcp");
 
     while(1)
@@ -96,6 +74,7 @@ void Server(void)
         }
         puts("Client connected.");
 
+        SetSocketOwner(clientSocketDescriptor);
         ServerProcessing(clientSocketDescriptor);
 
         shutdownResult = ShutdownSocket(clientSocketDescriptor);
@@ -113,8 +92,6 @@ void Server(void)
 
 void ServerProcessing(int socket)
 {
-    int recvResult;
-
     int fileSize;
     char fileSizeStr[64] = {0};
     char fileName[256] = {0};
@@ -122,23 +99,17 @@ void ServerProcessing(int socket)
 
     char buffer[1000];
 
-
     FILE *wrfile;
 
-    recvResult = recv(socket, fileName, 256, 0);
-    if (recvResult < 1)
+    if (ReceiveFileName(socket, fileName) < 1)
     {
-        puts("FileName receive error.");
+        return;
+    }
+    if (ReceiveFileSize(socket, fileSizeStr) < 1)
+    {
         return;
     }
 
-
-    recvResult = recv(socket, fileSizeStr, 64, 0);
-    if (recvResult < 1)
-    {
-        puts("FileSize receive error.");
-        return;
-    }
     fileSize = atoi(fileSizeStr);
 
     wrfile = fopen(fileName, "w");
@@ -150,6 +121,12 @@ void ServerProcessing(int socket)
     totalReceivedBytes = 0;
     do
     {
+        if (urgentData > 0)
+        {
+            printf("Received %d bytes.\n", totalReceivedBytes);
+            urgentData--;
+            ReceiveOOBData(socket);
+        }
         receivedBytes = recv(socket, buffer, 1000, 0);
         if (receivedBytes > 0)
         {
@@ -158,7 +135,10 @@ void ServerProcessing(int socket)
         }
         else
         {
-            break;
+            if (errno != EINTR)
+            {
+                break;
+            }
         }
     } while (totalReceivedBytes < fileSize);
     if (totalReceivedBytes != fileSize)
@@ -169,39 +149,55 @@ void ServerProcessing(int socket)
     {
         puts ("File received correctly.");
     }
-
     fclose(wrfile);
     return;
 }
 
+void SendOOBData(int socket)
+{
+    char data[1] = {255};
+    if (send(socket, data, 1, MSG_OOB) <= 0)
+    {
+        puts("Out-of-Band data transmission failed.");
+    }
+    return;
+}
 
+void ReceiveOOBData(int socket)
+{
+    char data[1];
+
+    if (recv(socket, data, 1, MSG_OOB) < 1)
+    {
+        puts("Out-of-Band data reception failed");
+    }
+    return;
+}
+
+int SetSocketOwner(int socket)
+{
+    int result = fcntl(socket, F_SETOWN, getpid());
+    if (result < 0)
+    {
+        puts("SetSocketOwner failed.");
+    }
+    return result;
+}
+
+void OOBSignalHandler(int signum)
+{
+    if (signum == SIGURG)
+    {
+        urgentData++;
+    }
+    return;
+}
 
 void Client(char *filename)
 {
     int clientSocketDescriptor;
     int connectResult;
-    char fileName[256] = {0};
-    char fileSizeStr[64] = {0};
-    int fileSize;
-    int bytesRead;
-    char buffer[1000] = {0};
-
     FILE *rdfile;
-
-    clientSocketDescriptor = StartClient("tcp");
-    connectResult = ClientConnect(clientSocketDescriptor, "127.0.0.1", 6660);
-
-    if (connectResult == -1)
-    {
-        return;
-    }
-    strcpy(fileName, basename(filename));
-
-    if (strlen(fileName) == 0)
-    {
-        puts ("FileName error.");
-        return;
-    }
 
     rdfile = fopen(filename, "r");
     if (rdfile == NULL)
@@ -209,19 +205,38 @@ void Client(char *filename)
         puts ("Error while opening file.");
         return;
     }
+    clientSocketDescriptor = StartClient("tcp");
+    connectResult = ClientConnect(clientSocketDescriptor, "127.0.0.1", 6660);
+    if (connectResult == -1)
+    {
+        return;
+    }
+    if (SendFileName(clientSocketDescriptor, filename) == -1)
+    {
+        return;
+    }
+    if (SendFileSize(clientSocketDescriptor, rdfile) == -1)
+    {
+        return;
+    }
+    ClientProcess(clientSocketDescriptor, rdfile);
+    ShutdownSocket(clientSocketDescriptor);
+    CloseSocket(clientSocketDescriptor);
+    fclose(rdfile);
 
-    fseek(rdfile, 0L, SEEK_END);
-    fileSize = ftell(rdfile);
-    fseek(rdfile, 0L, SEEK_SET);
+    return;
+}
 
-    itoa(fileSize, fileSizeStr);
 
-    send(clientSocketDescriptor, fileName, strlen(fileName), 0);
-    send(clientSocketDescriptor, fileSizeStr, strlen(fileSizeStr), 0);
+void ClientProcess(int clientSocketDescriptor, FILE *rdfile)
+{
+    int bytesRead;
+    char buffer[1000] = {0};
 
     while (1)
     {
         bytesRead = fread(buffer, 1, 1000, rdfile);
+        SendOOBData(clientSocketDescriptor);
         if (bytesRead < 1000)
         {
             send(clientSocketDescriptor, buffer, bytesRead, 0);
@@ -233,15 +248,7 @@ void Client(char *filename)
         }
     }
     puts ("File transmitted.");
-
-    ShutdownSocket(clientSocketDescriptor);
-    CloseSocket(clientSocketDescriptor);
-
     return;
 }
 
-void Prompt(void)
-{
-    puts("Usage:\t./lab3 server\n\t./lab3 client [filename]");
-    return;
-}
+
