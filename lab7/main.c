@@ -1,9 +1,10 @@
 #include "main.h"
+#include <pthread.h>
 
 void Prompt(void);
 void Server(void);
 void Client(char *filename);
-void ServerProcessing(int socket);
+void *ServerProcessing(void *arg);
 void ClientProcess(int clientSocketDescriptor, FILE *rdfile);
 void SendOOBData(int socket);
 void ReceiveOOBData(int socket);
@@ -11,6 +12,15 @@ void OOBSignalHandler(int signum);
 int SetSocketOwner(int socket);
 
 int urgentData = 0;
+
+struct ParamStruct
+{
+    int serverSocketDescriptor;
+    int clientSocketDescriptor;
+};
+
+void ThreadAdd (struct PthreadStruct *threads, pthread_t *thread);
+void ThreadJoinAll (struct PthreadStruct *threads);
 
 int main(int argc, char **argv)
 {
@@ -59,11 +69,15 @@ void Prompt(void)
 void Server(void)
 {
     int serverSocketDescriptor, clientSocketDescriptor;
-    int shutdownResult;
-
+    int result;
+    pthread_t thread;
+    struct PthreadStruct threads;
+    struct ParamStruct params;
     SetSignal(SIGURG, &OOBSignalHandler);
 
     serverSocketDescriptor = StartServer("127.0.0.1", 6660, "tcp");
+
+    threads.threadCount = 0;
 
     while(1)
     {
@@ -75,50 +89,64 @@ void Server(void)
         puts("Client connected.");
 
         SetSocketOwner(clientSocketDescriptor);
-        ServerProcessing(clientSocketDescriptor);
-
-        shutdownResult = ShutdownSocket(clientSocketDescriptor);
-        if (shutdownResult == -1)
+        params.clientSocketDescriptor = clientSocketDescriptor;
+        params.serverSocketDescriptor = serverSocketDescriptor;
+        result = pthread_create(&thread, NULL, &ServerProcessing, (void*)&params);
+        printf("%d\n",result);
+        if (result != 0)
         {
-            CloseSocket(serverSocketDescriptor);
-            CloseSocket(clientSocketDescriptor);
-            exit(EXIT_FAILURE);
+            puts("Thread creation failed.");
+            return;
         }
-        CloseSocket(clientSocketDescriptor);
-        puts("Client connection has been closed.");
+
+        puts("Thread created");
+        ThreadAdd(&threads, &thread);
+
+
+
     }
+    ThreadJoinAll(&threads);
+    puts("Threads joined");
     return;
 }
 
-void ServerProcessing(int socket)
+void *ServerProcessing(void *arg)
 {
+    struct ParamStruct params = *(struct ParamStruct*)arg;
+    int socket = params.clientSocketDescriptor;
     int fileSize;
     char fileSizeStr[64] = {0};
     char fileName[256] = {0};
     int receivedBytes, totalReceivedBytes;
+    int shutdownResult;
 
     char buffer[1000];
 
     FILE *wrfile;
 
+    puts("Thread started.");
+    //CloseSocket(params.serverSocketDescriptor);
     if (ReceiveFileName(socket, fileName) < 1)
     {
-        return;
+        puts("FileName receive error.");
+
+        pthread_exit(NULL);
     }
     send(socket, fileName, 1, 0);
     if (ReceiveFileSize(socket, fileSizeStr) < 1)
     {
-        return;
+        puts("FileSize receive error.");
+        pthread_exit(NULL);
     }
     send(socket, fileName, 1, 0);
 
     fileSize = atoi(fileSizeStr);
-
+    printf("Receiving %s file, %s bytes...\n", fileName, fileSizeStr);
     wrfile = fopen(fileName, "w");
     if (wrfile == NULL)
     {
         puts ("Error while opening file.");
-        return;
+        pthread_exit(NULL);
     }
     totalReceivedBytes = 0;
     do
@@ -152,7 +180,15 @@ void ServerProcessing(int socket)
         puts ("File received correctly.");
     }
     fclose(wrfile);
-    return;
+    shutdownResult = ShutdownSocket(socket);
+    if (shutdownResult == -1)
+    {
+        CloseSocket(socket);
+        pthread_exit(NULL);
+    }
+    CloseSocket(socket);
+    puts("Client connection has been closed.");
+    pthread_exit(NULL);
 }
 
 void SendOOBData(int socket)
@@ -217,6 +253,7 @@ void Client(char *filename)
     {
         return;
     }
+
     if (SendFileSize(clientSocketDescriptor, rdfile) == -1)
     {
         return;
@@ -238,7 +275,7 @@ void ClientProcess(int clientSocketDescriptor, FILE *rdfile)
     while (1)
     {
         bytesRead = fread(buffer, 1, 1000, rdfile);
-        SendOOBData(clientSocketDescriptor);
+        //SendOOBData(clientSocketDescriptor);
         if (bytesRead < 1000)
         {
             send(clientSocketDescriptor, buffer, bytesRead, 0);
@@ -253,4 +290,25 @@ void ClientProcess(int clientSocketDescriptor, FILE *rdfile)
     return;
 }
 
+void ThreadAdd (struct PthreadStruct *threads, pthread_t *thread)
+{
+    puts("Start thread add.");
+    threads->thread[threads->threadCount] = thread;
+    threads->threadCount = threads->threadCount + 1;
+    puts("Thread added");
+    return;
+}
 
+void ThreadJoinAll (struct PthreadStruct *threads)
+{
+    int i, result;
+    for (i=0; i<threads->threadCount; i++)
+    {
+        result = pthread_join(*(threads->thread[i]), NULL);
+        if (result != 0)
+        {
+            printf("Joining %d thread failed.\n", i);
+        }
+    }
+    return;
+}

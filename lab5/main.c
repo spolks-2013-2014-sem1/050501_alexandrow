@@ -78,10 +78,12 @@ void ServerProcessing(int socket)
     {
         return;
     }
+    send(socket, fileName, 1, 0);
     if (ReceiveFileSize(socket, fileSizeStr) < 1)
     {
         return;
     }
+    send(socket, fileName, 1, 0);
     printf("Receiving %s file, %s bytes...\n", fileName, fileSizeStr);
     fileSize = atoi(fileSizeStr);
 

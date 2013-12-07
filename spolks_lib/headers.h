@@ -5,6 +5,7 @@
 #include <fcntl.h>
 #include <libgen.h>
 #include <errno.h>
+#include <pthread.h>
 
 #include <sys/types.h>
 #include <sys/socket.h>
