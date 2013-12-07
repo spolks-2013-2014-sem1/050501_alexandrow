@@ -2,7 +2,7 @@
 
 int StartClient (const char* protocolName)
 {
-    int socketDescriptor = CreateSocket("tcp");
+    int socketDescriptor = CreateSocket(protocolName);
     int option = 1;
 
     setsockopt(socketDescriptor, SOL_SOCKET, SO_REUSEADDR, (void*)&option, sizeof(option));

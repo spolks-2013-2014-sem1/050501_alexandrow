@@ -3,6 +3,8 @@
 
 //Common part. Should be in library folder for all labs
 
+int DetermineSocketType (const char* protocolName);
+
 int socketDescriptors[MAX_SOCKETS] = {0};
 int socketCount = 0;
 
@@ -12,7 +14,7 @@ int CreateSocket(const char *protocolName)
     struct protoent *protocol;
 
     protocol = getprotobyname(protocolName);
-    socketDescriptor = socket(AF_INET, SOCK_STREAM, protocol->p_proto);
+    socketDescriptor = socket(PF_INET, DetermineSocketType(protocolName), protocol->p_proto);
     if (socketDescriptor == -1)
     {
         puts("Socket creation failed!");
@@ -53,6 +55,16 @@ struct sockaddr_in PrepareSocketAddress(unsigned short port, const char *address
     }
 
     return socketAddress;
+}
+
+int DetermineSocketType (const char* protocolName)
+{
+    int type = SOCK_STREAM;
+    if (!strcmp(protocolName, "udp"))
+    {
+        type = SOCK_DGRAM;
+    }
+    return type;
 }
 
 int ShutdownSocket(int socket)

@@ -4,34 +4,7 @@ void Prompt(void);
 void Server(void);
 void Client(char *filename);
 void ServerProcessing(int socket);
-
- void reverse(char s[])
- {
-     int i, j;
-     char c;
-
-     for (i = 0, j = strlen(s)-1; i<j; i++, j--) {
-         c = s[i];
-         s[i] = s[j];
-         s[j] = c;
-     }
- }
-
- void itoa(int n, char s[])
- {
-     int i, sign;
-
-     if ((sign = n) < 0)
-         n = -n;
-     i = 0;
-     do {
-         s[i++] = n % 10 + '0';
-     } while ((n /= 10) > 0);
-     if (sign < 0)
-         s[i++] = '-';
-     s[i] = '\0';
-     reverse(s);
- }
+void ClientProcess(int clientSocketDescriptor, FILE *rdfile);
 
 int main(int argc, char **argv)
 {
@@ -71,40 +44,27 @@ int main(int argc, char **argv)
     return EXIT_SUCCESS;
 }
 
+void Prompt(void)
+{
+    puts("Usage:\t./lab5 server\n\t./lab5 client [filename]");
+    return;
+}
+
 void Server(void)
 {
     int serverSocketDescriptor, clientSocketDescriptor;
-    int shutdownResult;
-    serverSocketDescriptor = StartServer("127.0.0.1", 6660, "tcp");
 
+    serverSocketDescriptor = StartServer("127.0.0.1", 6661, "udp");
     while(1)
     {
-        clientSocketDescriptor = AcceptClient(serverSocketDescriptor);
-        if (clientSocketDescriptor == -1)
-        {
-            continue;
-        }
-        puts("Client connected.");
-
+        clientSocketDescriptor = serverSocketDescriptor;
         ServerProcessing(clientSocketDescriptor);
-
-        shutdownResult = ShutdownSocket(clientSocketDescriptor);
-        if (shutdownResult == -1)
-        {
-            CloseSocket(serverSocketDescriptor);
-            CloseSocket(clientSocketDescriptor);
-            exit(EXIT_FAILURE);
-        }
-        CloseSocket(clientSocketDescriptor);
-        puts("Client connection has been closed.");
     }
     return;
 }
 
 void ServerProcessing(int socket)
 {
-    int recvResult;
-
     int fileSize;
     char fileSizeStr[64] = {0};
     char fileName[256] = {0};
@@ -112,23 +72,17 @@ void ServerProcessing(int socket)
 
     char buffer[1000];
 
-
     FILE *wrfile;
 
-    recvResult = recv(socket, fileName, 256, 0);
-    if (recvResult < 1)
+    if (ReceiveFileName(socket, fileName) < 1)
     {
-        puts("FileName receive error.");
         return;
     }
-
-
-    recvResult = recv(socket, fileSizeStr, 64, 0);
-    if (recvResult < 1)
+    if (ReceiveFileSize(socket, fileSizeStr) < 1)
     {
-        puts("FileSize receive error.");
         return;
     }
+    printf("Receiving %s file, %s bytes...\n", fileName, fileSizeStr);
     fileSize = atoi(fileSizeStr);
 
     wrfile = fopen(fileName, "w");
@@ -146,10 +100,6 @@ void ServerProcessing(int socket)
             fwrite(buffer, 1, receivedBytes, wrfile);
             totalReceivedBytes += receivedBytes;
         }
-        else
-        {
-            break;
-        }
     } while (totalReceivedBytes < fileSize);
     if (totalReceivedBytes != fileSize)
     {
@@ -159,39 +109,15 @@ void ServerProcessing(int socket)
     {
         puts ("File received correctly.");
     }
-
     fclose(wrfile);
     return;
 }
-
-
 
 void Client(char *filename)
 {
     int clientSocketDescriptor;
     int connectResult;
-    char fileName[256] = {0};
-    char fileSizeStr[64] = {0};
-    int fileSize;
-    int bytesRead;
-    char buffer[1000] = {0};
-
     FILE *rdfile;
-
-    clientSocketDescriptor = StartClient("tcp");
-    connectResult = ClientConnect(clientSocketDescriptor, "127.0.0.1", 6660);
-
-    if (connectResult == -1)
-    {
-        return;
-    }
-    strcpy(fileName, basename(filename));
-
-    if (strlen(fileName) == 0)
-    {
-        puts ("FileName error.");
-        return;
-    }
 
     rdfile = fopen(filename, "r");
     if (rdfile == NULL)
@@ -199,15 +125,32 @@ void Client(char *filename)
         puts ("Error while opening file.");
         return;
     }
+    clientSocketDescriptor = StartClient("udp");
+    connectResult = ClientConnect(clientSocketDescriptor, "127.0.0.1", 6661);
+    if (connectResult == -1)
+    {
+        return;
+    }
+    if (SendFileName(clientSocketDescriptor, filename) == -1)
+    {
+        return;
+    }
+    if (SendFileSize(clientSocketDescriptor, rdfile) == -1)
+    {
+        return;
+    }
+    ClientProcess(clientSocketDescriptor, rdfile);
+    CloseSocket(clientSocketDescriptor);
+    fclose(rdfile);
 
-    fseek(rdfile, 0L, SEEK_END);
-    fileSize = ftell(rdfile);
-    fseek(rdfile, 0L, SEEK_SET);
+    return;
+}
 
-    itoa(fileSize, fileSizeStr);
 
-    send(clientSocketDescriptor, fileName, strlen(fileName), 0);
-    send(clientSocketDescriptor, fileSizeStr, strlen(fileSizeStr), 0);
+void ClientProcess(int clientSocketDescriptor, FILE *rdfile)
+{
+    int bytesRead;
+    char buffer[1000] = {0};
 
     while (1)
     {
@@ -223,15 +166,7 @@ void Client(char *filename)
         }
     }
     puts ("File transmitted.");
-
-    ShutdownSocket(clientSocketDescriptor);
-    CloseSocket(clientSocketDescriptor);
-
     return;
 }
 
-void Prompt(void)
-{
-    puts("Usage:\t./lab3 server\n\t./lab3 client [filename]");
-    return;
-}
+
