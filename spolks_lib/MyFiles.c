@@ -25,6 +25,7 @@ int ReceiveFileSize (int socket, char *fileSizeStr)
 int SendFileName(int socket, char *filename)
 {
     char fileName[256] = {0};
+    char buffer[4000];
     strcpy(fileName, basename(filename));
 
     if (strlen(fileName) == 0)
@@ -33,15 +34,24 @@ int SendFileName(int socket, char *filename)
         return -1;
     }
     send(socket, fileName, strlen(fileName), 0);
+    //shutdown(socket, SHUT_WR);
+    while(!recv(socket, buffer, 4000, 0))
+    {
+
+    }
     return 1;
 }
 
 int SendFileSize(int socket, FILE *rdfile)
 {
     char fileSizeStr[64] = {0};
-
+    char buffer[4000];
     sprintf(fileSizeStr, "%d", GetFileSize(rdfile));
     send(socket, fileSizeStr, strlen(fileSizeStr), 0);
+    while(!recv(socket, buffer, 4000, 0))
+    {
+
+    }
     return 1;
 }
 
