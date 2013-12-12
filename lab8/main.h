@@ -5,8 +5,3 @@
 #include "../spolks_lib/MyClient.h"
 #include "../spolks_lib/MyFiles.h"
 
-struct PthreadStruct
-{
-    pthread_t *thread[1024];
-    int threadCount;
-};
