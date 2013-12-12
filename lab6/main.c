@@ -155,7 +155,7 @@ int Preparation(int socket)
 
     fileSize = atoi(fileSizeStr);
     printf("Receiving %s file, %s bytes...\n", fileName, fileSizeStr);
-    wrfile = fopen(fileName, "w");
+    wrfile = fopen(fileName, "w+");
     if (wrfile == NULL)
     {
         puts ("Error while opening file.");

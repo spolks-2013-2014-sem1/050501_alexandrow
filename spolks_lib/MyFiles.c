@@ -42,6 +42,20 @@ int SendFileName(int socket, char *filename)
     return 1;
 }
 
+int SendFileNameUDP(int socket, char *filename)
+{
+    char fileName[256] = {0};
+    strcpy(fileName, basename(filename));
+
+    if (strlen(fileName) == 0)
+    {
+        puts ("FileName error.");
+        return -1;
+    }
+    send(socket, fileName, strlen(fileName), 0);
+    return 1;
+}
+
 int SendFileSize(int socket, FILE *rdfile)
 {
     char fileSizeStr[64] = {0};
@@ -53,6 +67,12 @@ int SendFileSize(int socket, FILE *rdfile)
 
     }
     return 1;
+}
+
+int SendFileSizeUDP(int socket, FILE *rdfile)
+{
+return SendFileSize(socket, rdfile);
+
 }
 
 int GetFileSize (FILE *file)

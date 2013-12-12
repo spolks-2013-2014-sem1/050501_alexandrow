@@ -5,6 +5,12 @@ void Server(void);
 void Client(char *filename);
 void ServerProcessing(int socket);
 void ClientProcess(int clientSocketDescriptor, FILE *rdfile);
+void SendOOBData(int socket);
+void ReceiveOOBData(int socket);
+void OOBSignalHandler(int signum);
+int SetSocketOwner(int socket);
+
+int urgentData = 0;
 
 int main(int argc, char **argv)
 {
@@ -46,20 +52,57 @@ int main(int argc, char **argv)
 
 void Prompt(void)
 {
-    puts("Usage:\t./lab5 server\n\t./lab5 client [filename]");
+    puts("Usage:\t./lab8 server\n\t./lab8 client [filename]");
     return;
 }
 
 void Server(void)
 {
     int serverSocketDescriptor, clientSocketDescriptor;
+    int shutdownResult;
 
-    serverSocketDescriptor = StartServer("127.0.0.1", 6661, "udp");
+    SetSignal(SIGURG, &OOBSignalHandler);
+
+    serverSocketDescriptor = StartServer("127.0.0.1", 6660, "tcp");
+
     while(1)
     {
-        clientSocketDescriptor = serverSocketDescriptor;
+        clientSocketDescriptor = AcceptClient(serverSocketDescriptor);
+        if (clientSocketDescriptor == -1)
+        {
+            continue;
+        }
+        puts("Client connected.");
 
-        ServerProcessing(clientSocketDescriptor);
+        switch (fork())
+        {
+            case -1:
+            {
+                puts("fork() error.");
+                break;
+            }
+            case 0:
+            {
+                SetSocketOwner(clientSocketDescriptor);
+                ServerProcessing(clientSocketDescriptor);
+                shutdownResult = ShutdownSocket(clientSocketDescriptor);
+                if (shutdownResult == -1)
+                {
+                    CloseSocket(serverSocketDescriptor);
+                    CloseSocket(clientSocketDescriptor);
+                    exit(EXIT_FAILURE);
+                }
+                CloseSocket(clientSocketDescriptor);
+                puts("Client connection has been closed.");
+                return;
+                break;
+            }
+            default: CloseSocket(clientSocketDescriptor);
+        }
+
+
+
+
     }
     return;
 }
@@ -70,10 +113,6 @@ void ServerProcessing(int socket)
     char fileSizeStr[64] = {0};
     char fileName[256] = {0};
     int receivedBytes, totalReceivedBytes;
-    struct timeval timeout;
-    timeout.tv_sec = 3;
-    timeout.tv_usec = 0;
-
 
     char buffer[1000];
 
@@ -83,32 +122,44 @@ void ServerProcessing(int socket)
     {
         return;
     }
+    send(socket, fileName, 1, 0);
     if (ReceiveFileSize(socket, fileSizeStr) < 1)
     {
         return;
     }
-    printf("Receiving %s file, %s bytes...\n", fileName, fileSizeStr);
+    send(socket, fileName, 1, 0);
+
     fileSize = atoi(fileSizeStr);
 
-    wrfile = fopen(fileName, "w+");
+    printf("Receiving %s file, %s bytes...\n", fileName, fileSizeStr);
+
+    wrfile = fopen(fileName, "w");
     if (wrfile == NULL)
     {
         puts ("Error while opening file.");
         return;
     }
-
-        if (setsockopt (socket, SOL_SOCKET, SO_RCVTIMEO, (char *)&timeout, sizeof(timeout)) < 0)
-        {
-            puts("Set Timeout failed");
-        }
     totalReceivedBytes = 0;
     do
     {
+        if (urgentData > 0)
+        {
+            printf("Received %d bytes.\n", totalReceivedBytes);
+            urgentData--;
+            ReceiveOOBData(socket);
+        }
         receivedBytes = recv(socket, buffer, 1000, 0);
         if (receivedBytes > 0)
         {
             fwrite(buffer, 1, receivedBytes, wrfile);
             totalReceivedBytes += receivedBytes;
+        }
+        else
+        {
+            if (errno != EINTR)
+            {
+                break;
+            }
         }
     } while (totalReceivedBytes < fileSize);
     if (totalReceivedBytes != fileSize)
@@ -119,12 +170,47 @@ void ServerProcessing(int socket)
     {
         puts ("File received correctly.");
     }
-    timeout.tv_sec = 999;
-    if (setsockopt (socket, SOL_SOCKET, SO_RCVTIMEO, (char *)&timeout, sizeof(timeout)) < 0)
-        {
-            puts("Set Timeout failed");
-        }
     fclose(wrfile);
+    return;
+}
+
+void SendOOBData(int socket)
+{
+    char data[1] = {255};
+    if (send(socket, data, 1, MSG_OOB) <= 0)
+    {
+        puts("Out-of-Band data transmission failed.");
+    }
+    return;
+}
+
+void ReceiveOOBData(int socket)
+{
+    char data[1];
+
+    if (recv(socket, data, 1, MSG_OOB) < 1)
+    {
+        puts("Out-of-Band data reception failed");
+    }
+    return;
+}
+
+int SetSocketOwner(int socket)
+{
+    int result = fcntl(socket, F_SETOWN, getpid());
+    if (result < 0)
+    {
+        puts("SetSocketOwner failed.");
+    }
+    return result;
+}
+
+void OOBSignalHandler(int signum)
+{
+    if (signum == SIGURG)
+    {
+        urgentData++;
+    }
     return;
 }
 
@@ -140,21 +226,22 @@ void Client(char *filename)
         puts ("Error while opening file.");
         return;
     }
-    clientSocketDescriptor = StartClient("udp");
-    connectResult = ClientConnect(clientSocketDescriptor, "127.0.0.1", 6661);
+    clientSocketDescriptor = StartClient("tcp");
+    connectResult = ClientConnect(clientSocketDescriptor, "127.0.0.1", 6660);
     if (connectResult == -1)
     {
         return;
     }
-    if (SendFileNameUDP(clientSocketDescriptor, filename) == -1)
+    if (SendFileName(clientSocketDescriptor, filename) == -1)
     {
         return;
     }
-    if (SendFileSizeUDP(clientSocketDescriptor, rdfile) == -1)
+    if (SendFileSize(clientSocketDescriptor, rdfile) == -1)
     {
         return;
     }
     ClientProcess(clientSocketDescriptor, rdfile);
+    ShutdownSocket(clientSocketDescriptor);
     CloseSocket(clientSocketDescriptor);
     fclose(rdfile);
 
@@ -170,6 +257,7 @@ void ClientProcess(int clientSocketDescriptor, FILE *rdfile)
     while (1)
     {
         bytesRead = fread(buffer, 1, 1000, rdfile);
+        //SendOOBData(clientSocketDescriptor);
         if (bytesRead < 1000)
         {
             send(clientSocketDescriptor, buffer, bytesRead, 0);
